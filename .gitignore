@@ -1,0 +1,8 @@
+*.sim
+*.ip_user_files
+*.hw
+*.cache
+*.xpr
+*.runs
+*.srcs/utils_1
+
