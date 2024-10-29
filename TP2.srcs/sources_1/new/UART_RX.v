@@ -1,130 +1,113 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 10/20/2024 10:18:48 PM
-// Design Name: 
-// Module Name: UART_RX
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-//  UART receiver module for asynchronous data reception.
-//  It synchronizes and samples incoming serial data to reconstruct
-//  the transmitted byte and signals when reception is complete.
-//
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
 
 module UART_RX
 (
     // Definición de Puertos del módulo
-    input wire in_clk,                  // Señal de reloj de entrada
-    input wire in_rx_en,                // Señal de habilitación para recepción
-    input wire rst,                     // Señal de reset
-    input wire rx_serial_data,          // Señal serial de datos de entrada
-    output wire rx_finish,              // Señal de finalización de recepción
-    output reg [7:0] rx_data            // Byte de datos recibido
+    input wire in_clock,                    // Señal de reloj de entrada
+    input wire in_baudrate_enable,          // Señal de habilitación para recepción
+    input wire in_reset,                    // Señal de reset
+    input wire in_serial_data,              // Señal serial de datos de entrada
+    output wire out_reception_complete,     // Señal de finalización de recepción
+    output reg [7:0] out_parallel_data      // Byte de datos recibido
 );
 
     // Parámetros para los estados de la máquina de estados
-    localparam IDLE = 1'b0;
-    localparam READ = 1'b1;
+    localparam STATE_IDLE = 1'b0;
+    localparam STATE_READ = 1'b1;
 
     // Registros y variables internos
-    reg rx_serial_data_r, rx_serial_data_r2, rx_serial_data_r3; // Registros de sincronización de señal de entrada
-    reg state;                           // Estado de la máquina de estados
-    reg [3:0] sample_cnt;                // Contador de muestras para la sincronización
-    reg [2:0] rx_cnt;                    // Contador de bits recibidos
-    reg rx_finish_r, rx_finish_r2, rx_finish_r3; // Registros para la señal de finalización de recepción
+    reg [3:0] sample_counter;                     // Contador de muestras para la sincronización de bits
+    reg [2:0] bit_counter;                        // Contador de bits recibidos
+    reg reception_complete_flag;                  // Indica la finalización de recepción
+    reg reception_complete_delay1, reception_complete_delay2; // Latches para la señal de finalización
+
+    reg in_serial_data_sync1, in_serial_data_sync2, in_serial_data_sync3; // Registros de sincronización para la señal de entrada
+    reg state;                                     // Estado actual de la máquina de estados
 
     // Señal sincronizada para recepción
-    wire rx_sync = rx_serial_data_r3;
+    wire synchronized_serial_data = in_serial_data_sync3;
 
-    // Doble latch para sincronizar la señal de entrada rx_serial_data
-    always @(posedge in_clk) begin
-        if (rst) begin
-            rx_serial_data_r <= 1;
-            rx_serial_data_r2 <= 1;
-            rx_serial_data_r3 <= 1;
+    // Doble latch para sincronizar la señal de entrada in_serial_data
+    always @(posedge in_clock) begin
+        if (in_reset) begin
+            in_serial_data_sync1 <= 1;
+            in_serial_data_sync2 <= 1;
+            in_serial_data_sync3 <= 1;
         end 
-        else if (in_rx_en) begin
-            rx_serial_data_r <= rx_serial_data;
-            rx_serial_data_r2 <= rx_serial_data_r;
-            rx_serial_data_r3 <= rx_serial_data_r2;
+        else if (in_baudrate_enable) begin
+            in_serial_data_sync1 <= in_serial_data;
+            in_serial_data_sync2 <= in_serial_data_sync1;
+            in_serial_data_sync3 <= in_serial_data_sync2;
         end
     end
 
     // Máquina de estados para recepción de datos
-    always @(posedge in_clk) begin
-        if (rst) begin
-            sample_cnt <= 0;
-            rx_cnt <= 0;
-            rx_data <= 0;
-            state <= IDLE;
+    always @(posedge in_clock) begin
+        if (in_reset) begin
+            sample_counter <= 0;
+            bit_counter <= 0;
+            out_parallel_data <= 0;
+            state <= STATE_IDLE;
+            reception_complete_flag <= 1'b0;
         end
-        else if (in_rx_en) begin
+        else if (in_baudrate_enable) begin
             case(state)
-                IDLE: begin
-                    rx_cnt <= 0;
+                STATE_IDLE: begin
+                    bit_counter <= 0;
                     // Inicia la lectura cuando se detecta un bit de inicio (0)
-                    if (rx_sync == 0) begin
-                        sample_cnt <= sample_cnt + 1;
-                        if (sample_cnt == 4'd7) begin   // Mitad del ciclo detectado
-                            state <= READ;             // Cambia al estado de lectura
+                    if (synchronized_serial_data == 0) begin
+                        sample_counter <= sample_counter + 1;
+                        if (sample_counter == 4'd7) begin   // Mitad del ciclo detectado
+                            state <= STATE_READ;            // Cambia al estado de lectura
                         end
                     end
                     else begin
-                        sample_cnt <= 0;
+                        sample_counter <= 0;
                     end
                 end
-                READ: begin
-                    sample_cnt <= sample_cnt + 1;
-                    if (sample_cnt == 4'd7) begin
-                        rx_cnt <= rx_cnt + 1;
-                        if (rx_cnt == 4'd7) begin
-                            state <= IDLE;
-                            rx_finish_r <= 1;
+                STATE_READ: begin
+                    sample_counter <= sample_counter + 1;
+                    if (sample_counter == 4'd7) begin
+                        bit_counter <= bit_counter + 1;
+                        // Asignación de bits recibidos al registro de datos
+                        case(bit_counter)
+                            3'd0: out_parallel_data[0] <= synchronized_serial_data;
+                            3'd1: out_parallel_data[1] <= synchronized_serial_data;
+                            3'd2: out_parallel_data[2] <= synchronized_serial_data;
+                            3'd3: out_parallel_data[3] <= synchronized_serial_data;
+                            3'd4: out_parallel_data[4] <= synchronized_serial_data;
+                            3'd5: out_parallel_data[5] <= synchronized_serial_data;
+                            3'd6: out_parallel_data[6] <= synchronized_serial_data;
+                            3'd7: out_parallel_data[7] <= synchronized_serial_data;
+                        endcase
+
+                        // Comprobación de finalización de recepción
+                        if (bit_counter == 4'd7) begin
+                            state <= STATE_IDLE;
+                            reception_complete_flag <= 1;
                         end
                         else begin
-                            rx_finish_r <= 0;
+                            reception_complete_flag <= 0;
                         end
-                        // Asignación de bits recibidos al registro de datos
-                        case(rx_cnt)
-                            3'd0: rx_data[0] <= rx_sync;
-                            3'd1: rx_data[1] <= rx_sync;
-                            3'd2: rx_data[2] <= rx_sync;
-                            3'd3: rx_data[3] <= rx_sync;
-                            3'd4: rx_data[4] <= rx_sync;
-                            3'd5: rx_data[5] <= rx_sync;
-                            3'd6: rx_data[6] <= rx_sync;
-                            3'd7: rx_data[7] <= rx_sync;
-                        endcase
                     end
                 end
             endcase
         end   
     end
 
-    // Latch para señal de finalización de recepción
-    always @(posedge in_clk) begin
-        if (rst) begin
-            rx_finish_r2 <= 0;
-            rx_finish_r3 <= 0;
+    // Latches para capturar el final de la recepción
+    always @(posedge in_clock) begin
+        if (in_reset) begin
+            reception_complete_delay1 <= 0;
+            reception_complete_delay2 <= 0;
         end
         else begin
-            rx_finish_r2 <= rx_finish_r;
-            rx_finish_r3 <= rx_finish_r2;
+            reception_complete_delay1 <= reception_complete_flag;
+            reception_complete_delay2 <= reception_complete_delay1;
         end
     end
 
     // Asignación de la señal de finalización de recepción
-    assign rx_finish = rx_finish_r2 & ~rx_finish_r3;
+    assign out_reception_complete = reception_complete_delay1 & ~reception_complete_delay2;
 
 endmodule

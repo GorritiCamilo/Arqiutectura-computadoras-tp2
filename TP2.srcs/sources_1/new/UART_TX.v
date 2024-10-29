@@ -1,90 +1,67 @@
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 10/17/2024 09:20:22 PM
-// Design Name: 
-// Module Name: UART_TX
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-//  UART transmitter module that converts parallel data to serial format for transmission.
-//  It signals when the transmission has completed.
-//
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
 
 module UART_TX
 (
     // Definición de Puertos del módulo
-    input wire in_clk,                   // Señal del reloj principal
-    input wire out_tx_en,                // Habilitación de transmisión en baudrate
-    input wire rst,                      // Señal de reset del módulo
-    input wire tx_data_en,               // Señal de habilitación de datos de entrada
-    input wire [7:0] tx_data_in,         // Dato paralelo a convertir en serial
-    output wire tx_finish,               // Indica la finalización de transmisión
-    output reg tx_serial_data            // Dato serial para transmisión
+    input wire in_clock,                   // Señal del reloj principal
+    input wire in_baudrate_enable,         // Habilitación de transmisión en baudrate
+    input wire in_reset,                   // Señal de reset del módulo
+    input wire in_data_enable,             // Señal de habilitación de datos de entrada
+    input wire [7:0] in_parallel_data,     // Dato paralelo a convertir en serial
+    output wire out_transmission_complete, // Indica la finalización de transmisión
+    output reg out_serial_data             // Dato serial para transmisión
 );
 
     // Parámetros para los estados de la máquina de estados
-    localparam WAIT = 1'b0;
-    localparam BUSY = 1'b1;
+    localparam STATE_IDLE = 1'b0;
+    localparam STATE_TRANSMIT = 1'b1;
 
     // Registros internos
-    reg state;                           // Estado de la máquina de estados
-    reg [3:0] tx_cnt;                    // Contador de bits transmitidos
-    reg tx_finish_r;                     // Registro temporal para indicar fin de transmisión
-    reg tx_finish_r2, tx_finish_r3;      // Latches para la señal de finalización
+    reg state;                                // Estado actual de la máquina de estados
+    reg [3:0] bit_counter;                    // Contador de bits transmitidos
+    reg transmission_complete_flag;           // Indica fin de transmisión
+    reg transmission_complete_delay1, transmission_complete_delay2; // Latches de señal finalización
 
     // Máquina de estados para transmisión de datos
-    always @(posedge in_clk) begin
-        if (rst) begin
-            state <= WAIT;
-            tx_finish_r <= 1'b0;
-            tx_serial_data <= 1'b1;
-            tx_cnt <= 0;
+    always @(posedge in_clock) begin
+        if (in_reset) begin
+            state <= STATE_IDLE;
+            transmission_complete_flag <= 1'b0;
+            out_serial_data <= 1'b1;
+            bit_counter <= 0;
         end
         else begin
             case(state)
-                WAIT: begin
-                    tx_serial_data <= 1'b1;
-                    tx_finish_r <= 1'b1;
-                    // Inicia transmisión cuando tx_data_en está activo
-                    if (tx_data_en) begin
-                        state <= BUSY;
+                STATE_IDLE: begin
+                    out_serial_data <= 1'b1;
+                    transmission_complete_flag <= 1'b1;
+                    if (in_data_enable) begin
+                        state <= STATE_TRANSMIT;
                     end
                 end
-                BUSY: begin
-                    tx_finish_r <= 0;
-                    if (out_tx_en == 1) begin
-                        // Incrementa contador o vuelve al estado de espera tras transmisión completa
-                        if (tx_cnt < 4'd9) begin
-                            tx_cnt <= tx_cnt + 1;
+                STATE_TRANSMIT: begin
+                    transmission_complete_flag <= 0;
+                    if (in_baudrate_enable == 1) begin
+                        if (bit_counter < 4'd9) begin
+                            bit_counter <= bit_counter + 1;
                         end
                         else begin
-                            tx_cnt <= 0;
-                            state <= WAIT;
+                            bit_counter <= 0;
+                            state <= STATE_IDLE;
                         end
 
                         // Asignación de bits de transmisión en serie
-                        case(tx_cnt) 
-                            4'd0: tx_serial_data <= 0;              // Bit de inicio
-                            4'd1: tx_serial_data <= tx_data_in[0];
-                            4'd2: tx_serial_data <= tx_data_in[1];
-                            4'd3: tx_serial_data <= tx_data_in[2];
-                            4'd4: tx_serial_data <= tx_data_in[3];
-                            4'd5: tx_serial_data <= tx_data_in[4];
-                            4'd6: tx_serial_data <= tx_data_in[5];
-                            4'd7: tx_serial_data <= tx_data_in[6];
-                            4'd8: tx_serial_data <= tx_data_in[7];
-                            4'd9: tx_serial_data <= 1;              // Bit de parada
+                        case(bit_counter) 
+                            4'd0: out_serial_data <= 0;                   // Bit de inicio
+                            4'd1: out_serial_data <= in_parallel_data[0];
+                            4'd2: out_serial_data <= in_parallel_data[1];
+                            4'd3: out_serial_data <= in_parallel_data[2];
+                            4'd4: out_serial_data <= in_parallel_data[3];
+                            4'd5: out_serial_data <= in_parallel_data[4];
+                            4'd6: out_serial_data <= in_parallel_data[5];
+                            4'd7: out_serial_data <= in_parallel_data[6];
+                            4'd8: out_serial_data <= in_parallel_data[7];
+                            4'd9: out_serial_data <= 1;                   // Bit de parada
                         endcase
                     end
                 end
@@ -93,18 +70,18 @@ module UART_TX
     end
 
     // Latches para capturar el final de la transmisión
-    always @(posedge in_clk) begin
-        if (rst) begin
-            tx_finish_r2 <= 0;
-            tx_finish_r3 <= 0;
+    always @(posedge in_clock) begin
+        if (in_reset) begin
+            transmission_complete_delay1 <= 0;
+            transmission_complete_delay2 <= 0;
         end
         else begin
-            tx_finish_r2 <= tx_finish_r;
-            tx_finish_r3 <= tx_finish_r2;
+            transmission_complete_delay1 <= transmission_complete_flag;
+            transmission_complete_delay2 <= transmission_complete_delay1;
         end
     end
 
     // Asignación de la señal de finalización de transmisión
-    assign tx_finish = tx_finish_r2 & ~tx_finish_r3;
+    assign out_transmission_complete = transmission_complete_delay1 & ~transmission_complete_delay2;
 
 endmodule

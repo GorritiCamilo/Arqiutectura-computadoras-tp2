@@ -1,130 +1,64 @@
-module uart_test_top (Sys_clk, rst_n, SW3, RX, TX, led_on);
+`timescale 1ns / 1ps
 
-    // ------------------------------
-    // A Module For Testing UART VALID
-    // SW5 - TX
-    // SW6 - RX
-    // if SW3 pressed, Send Certain Char Through TX
-    // Then Wait For 1 Second
-    // If Receiving Data From RX
-    // Send It Back
-    // -------------------------------
+module uart_test_top;
+    // Definición de señales de prueba
+    reg in_clock;                      // Señal de reloj de 100 MHz
+    reg in_reset;                      // Señal de reset
+    reg in_data_enable;                // Señal de habilitación de datos de entrada
+    reg [7:0] in_parallel_data;        // Dato paralelo para enviar
+    wire out_transmission_complete;    // Señal de finalización de transmisión
+    wire out_serial_data;              // Dato serial transmitido
+    wire baud_tx_enable;               // Habilitación de transmisión generada por el baud rate generator
+    wire baud_rx_enable;               // Habilitación de recepción generada por el baud rate generator
 
-    input wire Sys_clk;
-    input wire rst_n;
-    input wire SW3;
-    input wire RX;
-    output wire TX;
-    output wire led_on;
-
-    assign led_on = ~SW3;  // Using LED to denote
-
-    // ------------The MAIN CONTROL LOGIC
-    reg main_state;
-    parameter IDLE = 1'b0;
-    parameter SEND = 1'b1;
-    parameter wait_time = 50_000_000;
-    reg [31:0] wait_time_cnt;
-
-    // Mensajes de Log para la FSM
-    initial begin
-        $display("UART Test Module Initialized");
-    end
-
-    always @(posedge clk_out1) begin
-        if (!rst_n) begin
-            main_state <= 0;
-            tx_data_in <= 0;
-            wait_time_cnt <= 0;
-            $display("[%0t] Reset Active, Initializing...", $time);
-        end else begin
-            case(main_state)
-                IDLE: begin
-                    tx_data_en <= 0;
-                    if (~SW3) begin
-                        wait_time_cnt <= wait_time_cnt + 1;
-                    end else begin
-                        wait_time_cnt <= 0;
-                    end 
-
-                    if (wait_time_cnt > wait_time) begin  // Hold SW3 For 0.5s
-                        main_state <= SEND;
-                        tx_data_in <= 8'b11111111;
-                        $display("[%0t] SW3 held for 0.5s, sending predefined data: %b", $time, tx_data_in);
-                    end
-
-                    if (rx_finish) begin
-                        tx_data_in <= rx_data;
-                        main_state <= SEND;
-                        $display("[%0t] Received data: %b, sending back...", $time, rx_data);
-                    end
-                end
-                SEND: begin
-                    tx_data_en <= 1;
-                    main_state <= IDLE;
-                    $display("[%0t] Data sent: %b, returning to IDLE", $time, tx_data_in);
-                end
-            endcase
-        end
-    end
-
-    // -------------The CLK WIZARD
-    clk_wiz_0 clk_wiz_test (
-        .clk_out1(clk_out1),    // output clk_out1
-        .reset(!rst_n),         // input reset
-        .locked(locked),        // output locked
-        .clk_in1(Sys_clk)       // input clk_in1
-    );
-
-    // --------------The UART BAUD RATE GENERATOR
-    wire tx_enable;
-    wire rx_enable;
-
-    uart_baud_rate_generator #(
-        .CLOCK_RATE(100_000_000),
-        .BAUD_RATE(115200)
-    ) baud_gen_inst (
-        .in_clk(clk_out1),
-        .out_tx_enable(tx_enable),
-        .out_rx_enable(rx_enable)
-    );
-
-    // --------------The UART RX Module
-    wire [7:0] rx_data;
-    wire rx_finish;
-
-    UART_RX uart_rx_inst (
-        .in_clk(clk_out1),
-        .in_rx_en(rx_enable),
-        .rst(!rst_n),           // Reset directo sin módulo externo
-        .rx_serial_data(RX),
-        .rx_finish(rx_finish),
-        .rx_data(rx_data)
-    );
-
-    // Log para recepción de datos UART
-    always @(posedge rx_finish) begin
-        $display("[%0t] RX Module: Data received: %b", $time, rx_data);
-    end
-
-    // --------------The UART TX Module
-    reg [7:0] tx_data_in;
-    reg tx_data_en;
-    wire tx_finish;
-
+    // Instancia del módulo UART_TX
     UART_TX uart_tx_inst (
-        .in_clk(clk_out1),
-        .out_tx_en(tx_enable),
-        .rst(!rst_n),           // Reset directo sin módulo externo
-        .tx_data_en(tx_data_en),
-        .tx_data_in(tx_data_in),
-        .tx_finish(tx_finish),
-        .tx_serial_data(TX)
+        .in_clock(in_clock),
+        .in_baudrate_enable(baud_tx_enable),  // Conectar señal de habilitación generada por el baud rate generator
+        .in_reset(in_reset),
+        .in_data_enable(in_data_enable),
+        .in_parallel_data(in_parallel_data),
+        .out_transmission_complete(out_transmission_complete),
+        .out_serial_data(out_serial_data)
     );
 
-    // Log para finalización de transmisión UART
-    always @(posedge tx_finish) begin
-        $display("[%0t] TX Module: Transmission complete for data: %b", $time, tx_data_in);
+    // Instancia del módulo uart_baud_rate_generator
+    uart_baud_rate_generator #(
+        .CLOCK_RATE_HZ(100_000_000),     // Frecuencia del reloj de 100 MHz
+        .BAUD_RATE_BPS(115200)           // Tasa de baudios de 115200
+    ) baud_rate_gen_inst (
+        .in_clock(in_clock),
+        .out_tx_baud_enable(baud_tx_enable),   // Conectar a la señal de habilitación de transmisión
+        .out_rx_baud_enable(baud_rx_enable)    // Conectar a la señal de habilitación de recepción
+    );
+
+    // Generación del reloj de 100 MHz
+    initial begin
+        in_clock = 0;
+        forever #5 in_clock = ~in_clock;  // Reloj de 100 MHz con periodo de 10 ns
+    end
+
+    // Estímulos de prueba
+    initial begin
+        // Inicialización de señales
+        in_reset = 1;
+        in_data_enable = 0;
+        in_parallel_data = 8'b10101010;  // Dato de prueba
+
+        // Liberar reset después de unos ciclos de reloj
+        #20 in_reset = 0;
+
+        // Proceso de transmisión de prueba
+        forever #10 in_data_enable = 1;        // Activar señal de habilitación de datos
+        forever #90 in_data_enable = 0;        // Desactivar habilitación de datos después de la transmisión
+
+        // Final de la simulación
+        //#1000 $finish;
+    end
+
+    // Monitor para ver el dato serializado en la consola
+    initial begin
+        $monitor("Time: %0t | Serial Output: %b", $time, out_serial_data);
     end
 
 endmodule
