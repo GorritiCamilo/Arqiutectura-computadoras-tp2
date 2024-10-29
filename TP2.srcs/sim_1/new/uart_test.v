@@ -1,25 +1,38 @@
 `timescale 1ns / 1ps
 
+
 module uart_test_top;
     // Definición de señales de prueba
     reg in_clock;                      // Señal de reloj de 100 MHz
     reg in_reset;                      // Señal de reset
     reg in_data_enable;                // Señal de habilitación de datos de entrada
     reg [7:0] in_parallel_data;        // Dato paralelo para enviar
-    wire out_transmission_complete;    // Señal de finalización de transmisión
-    wire out_serial_data;              // Dato serial transmitido
+    wire out_transmission_complete;    // Señal de finalización de transmisión (TX)
+    wire out_serial_data;              // Dato serial transmitido (TX)
+    wire out_reception_complete;       // Señal de finalización de recepción (RX)
+    wire [7:0] out_parallel_data;      // Dato recibido en paralelo (RX)
     wire baud_tx_enable;               // Habilitación de transmisión generada por el baud rate generator
     wire baud_rx_enable;               // Habilitación de recepción generada por el baud rate generator
 
     // Instancia del módulo UART_TX
     UART_TX uart_tx_inst (
         .in_clock(in_clock),
-        .in_baudrate_enable(baud_tx_enable),  // Conectar señal de habilitación generada por el baud rate generator
+        .in_baudrate_enable(baud_tx_enable),   // Conectar señal de habilitación generada por el baud rate generator
         .in_reset(in_reset),
         .in_data_enable(in_data_enable),
         .in_parallel_data(in_parallel_data),
         .out_transmission_complete(out_transmission_complete),
         .out_serial_data(out_serial_data)
+    );
+
+    // Instancia del módulo UART_RX
+    UART_RX uart_rx_inst (
+        .in_clock(in_clock),
+        .in_baudrate_enable(baud_rx_enable),   // Conectar señal de habilitación generada por el baud rate generator
+        .in_reset(in_reset),
+        .in_serial_data(out_serial_data),      // Conectar salida serial de TX a la entrada serial de RX
+        .out_reception_complete(out_reception_complete),
+        .out_parallel_data(out_parallel_data)
     );
 
     // Instancia del módulo uart_baud_rate_generator
@@ -38,7 +51,7 @@ module uart_test_top;
         forever #5 in_clock = ~in_clock;  // Reloj de 100 MHz con periodo de 10 ns
     end
 
-    // Estímulos de prueba
+    // Estímulos de prueba para enviar datos de TX a RX
     initial begin
         // Inicialización de señales
         in_reset = 1;
@@ -49,16 +62,22 @@ module uart_test_top;
         #20 in_reset = 0;
 
         // Proceso de transmisión de prueba
-        forever #10 in_data_enable = 1;        // Activar señal de habilitación de datos
-        forever #90 in_data_enable = 0;        // Desactivar habilitación de datos después de la transmisión
-
-        // Final de la simulación
-        //#1000 $finish;
+        forever begin
+            #10 in_data_enable = 1;        // Activar señal de habilitación de datos
+            #10 in_data_enable = 0;        // Desactivar habilitación de datos después de enviar
+            wait(out_transmission_complete); // Espera hasta que finalice la transmisión
+            #100;                          // Espera antes de siguiente transmisión
+        end
     end
 
-    // Monitor para ver el dato serializado en la consola
+    // Monitor para observar el dato serializado y el dato recibido en paralelo
     initial begin
         $monitor("Time: %0t | Serial Output: %b", $time, out_serial_data);
+    end
+
+    // Imprimir dato recibido en paralelo cuando la recepción esté completa
+    always @(posedge out_reception_complete) begin
+        $display("Time: %0t | Parallel Data Received: %b", $time, out_parallel_data);
     end
 
 endmodule
