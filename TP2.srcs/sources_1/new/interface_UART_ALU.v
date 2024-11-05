@@ -6,7 +6,7 @@ module interface_UART_ALU(
     input wire in_rx_data_ready,            // Señal que indica que el RX tiene un dato listo
     input wire [7:0] in_rx_data,            // Dato recibido desde UART_RX (8 bits)
     output wire out_tx_data_ready,          // Señal que indica al TX que hay un dato listo para enviar
-    output wire [7:0] out_tx_data          // Dato a enviar desde la FIFO de salida a UART_TX (8 bits)
+    output wire [7:0] out_tx_data           // Dato a enviar desde la FIFO de salida a UART_TX (8 bits)
 );
 
     // FIFO de entrada (almacena datos recibidos del RX)
@@ -43,7 +43,6 @@ module interface_UART_ALU(
     always @(posedge in_clock) begin
         if (in_reset) begin
             fifo_in_head <= 0;
-            fifo_in_tail <= 0;
         end else if (in_rx_data_ready && !fifo_in_full) begin
             fifo_in[fifo_in_head] <= in_rx_data;
             fifo_in_head <= fifo_in_head + 1;
@@ -58,43 +57,40 @@ module interface_UART_ALU(
             alu_data_a <= 0;
             alu_data_b <= 0;
             alu_operation <= 0;
-            alu_ready <= 0;
         end else if (!fifo_in_empty && !processing_data) begin
             // Procesar el siguiente dato de la FIFO de entrada
             processing_data <= 1;
-            alu_ready <= 0; // Reiniciamos alu_ready cuando empezamos un nuevo procesamiento
             case (fifo_in[fifo_in_tail][7:6]) // Clasificación CC
                 2'b00: alu_data_a <= fifo_in[fifo_in_tail][3:0]; // Dato A
                 2'b01: alu_data_b <= fifo_in[fifo_in_tail][3:0]; // Dato B
-                2'b10: begin
-                    alu_operation <= fifo_in[fifo_in_tail][5:0]; // Operación
-                    alu_ready <= 1;  // Marcamos alu_ready después de cargar operación
-                end
+                2'b10: alu_operation <= fifo_in[fifo_in_tail][5:0]; // Operación
             endcase
-            fifo_in_tail <= fifo_in_tail + 1;
         end else if (alu_ready) begin
             processing_data <= 0; // Liberamos el procesamiento una vez listo
         end
     end
 
-    // Control de salida: Escritura en FIFO de salida
+    // Bloque separado para controlar la señal alu_ready
     always @(posedge in_clock) begin
         if (in_reset) begin
-            fifo_out_head <= 0;
-            fifo_out_tail <= 0;
-        end else if (alu_ready && !fifo_out_full) begin
-            // Almacena el resultado de la ALU extendido a 8 bits
-            fifo_out[fifo_out_head] <= {4'b0000, alu_result}; 
-            fifo_out_head <= fifo_out_head + 1;
-            alu_ready <= 0; // Resetea la señal de alu_ready tras almacenar el resultado
+            alu_ready <= 0;
+        end else if (!fifo_in_empty && !processing_data && fifo_in[fifo_in_tail][7:6] == 2'b10) begin
+            alu_ready <= 1; // Activa alu_ready cuando la operación está lista
+        end else if (alu_ready) begin
+            alu_ready <= 0; // Desactiva alu_ready después de una operación
         end
     end
 
-    // Asignación para transmisión
-    assign out_tx_data_ready = !out_fifo_empty;         // Indica al TX si hay datos para enviar
-    assign out_tx_data = fifo_out[fifo_out_tail];       // Envía el dato de la FIFO de salida
+    // Bloque separado para actualizar fifo_in_tail
+    always @(posedge in_clock) begin
+        if (in_reset) begin
+            fifo_in_tail <= 0;
+        end else if (!fifo_in_empty && processing_data) begin
+            fifo_in_tail <= fifo_in_tail + 1;
+        end
+    end
 
-    // Control de lectura de la FIFO de salida para transmisión
+    // Bloque separado para actualizar fifo_out_tail
     always @(posedge in_clock) begin
         if (in_reset) begin
             fifo_out_tail <= 0;
@@ -102,5 +98,20 @@ module interface_UART_ALU(
             fifo_out_tail <= fifo_out_tail + 1;
         end
     end
+
+    // Control de salida: Escritura en FIFO de salida
+    always @(posedge in_clock) begin
+        if (in_reset) begin
+            fifo_out_head <= 0;
+        end else if (alu_ready && !fifo_out_full) begin
+            // Almacena el resultado de la ALU extendido a 8 bits
+            fifo_out[fifo_out_head] <= {4'b0000, alu_result}; 
+            fifo_out_head <= fifo_out_head + 1;
+        end
+    end
+
+    // Asignación para transmisión
+    assign out_tx_data_ready = !out_fifo_empty;         // Indica al TX si hay datos para enviar
+    assign out_tx_data = fifo_out[fifo_out_tail];       // Envía el dato de la FIFO de salida
 
 endmodule
