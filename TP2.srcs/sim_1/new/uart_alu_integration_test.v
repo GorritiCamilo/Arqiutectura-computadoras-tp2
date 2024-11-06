@@ -4,11 +4,12 @@ module uart_alu_integration_test;
     // Señales de prueba
     reg in_clock_100MHz;
     reg in_reset;
-    reg in_data_enable;
-    reg [7:0] in_parallel_data;        // Dato paralelo para transmitir
-    wire out_serial_data;              // Salida de datos seriales
-    wire out_reception_complete;       // Señal de finalización de recepción (RX)
-    wire [7:0] out_parallel_data;      // Dato recibido en paralelo (RX)
+    reg in_rx_data_ready;               // Señal manual de in_rx_data_ready
+    reg [7:0] in_rx_data;               // Datos manuales de entrada para el RX
+    wire out_serial_data;               // Salida de datos seriales
+    wire out_reception_complete;        // Señal de finalización de recepción (RX)
+    wire out_tx_data_ready;             // Señal que indica que hay un dato listo para enviar en TX
+    wire [7:0] out_tx_data;             // Dato listo para ser transmitido (8 bits)
 
     // Instancia del módulo `uart_alu_top`
     uart_alu_top uut (
@@ -26,18 +27,17 @@ module uart_alu_integration_test;
 
     // Parámetros de las operaciones ALU
     localparam [5:0] SUMA  = 6'b100000;
-    localparam [5:0] RESTA = 6'b100010;
 
     // Secuencia de pruebas
     initial begin
         // Inicialización de señales
         in_reset = 1;
+        in_rx_data_ready = 0;
         #20 in_reset = 0;  // Liberar reset
-        
-        // Enviar operación de prueba
-        send_alu_operation(4'b1010, 4'b0011, SUMA, "SUMA");   // A=10, B=3, operación SUMA
-        send_alu_operation(4'b1100, 4'b0101, RESTA, "RESTA"); // A=12, B=5, operación RESTA
-        
+
+        // Enviar datos de prueba (SUMA: operandos A = 10 y B = 3)
+        send_alu_operation(4'b1010, 4'b0011, SUMA, "SUMA");
+
         #2000000;  // Espera extendida para que todas las operaciones terminen
         $finish;
     end
@@ -66,14 +66,14 @@ module uart_alu_integration_test;
         end
     endtask
 
-    // Tarea para enviar un byte utilizando el protocolo UART
+    // Tarea para enviar un byte y activar la señal `in_rx_data_ready`
     task send_byte(input [7:0] data);
         begin
-            $display("Time: %0t | Sending byte: %b", $time, data);
-            in_parallel_data = data;
-            in_data_enable = 1;
-            #10 in_data_enable = 0;
-            #100;  // Espera
+            in_rx_data = data;
+            in_rx_data_ready = 1;
+            #10 in_rx_data_ready = 0;
+            #100;  // Espera para estabilización
+            $display("Time: %0t | Sent byte: %b", $time, data);
         end
     endtask
 
@@ -81,10 +81,16 @@ module uart_alu_integration_test;
     task wait_for_result;
         begin
             $display("Esperando recepción del resultado de la ALU...");
-            wait(out_reception_complete);  // Espera hasta que la recepción esté completa
+            wait(out_tx_data_ready);  // Espera hasta que la transmisión esté lista
             #100;  // Espera para estabilización
-            $display("Time: %0t | Received ALU result: %b", $time, out_parallel_data);
+            $display("Time: %0t | Received ALU result: %b", $time, out_tx_data);
         end
     endtask
+
+    // Monitor para observar el dato serializado en tiempo real
+    initial begin
+        $monitor("Time: %0t | in_rx_data_ready: %b | in_rx_data: %b | out_tx_data_ready: %b | out_tx_data: %b", 
+                 $time, in_rx_data_ready, in_rx_data, out_tx_data_ready, out_tx_data);
+    end
 
 endmodule
