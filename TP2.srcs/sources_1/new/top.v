@@ -65,4 +65,10 @@ module uart_alu_top(
         .out_serial_data(out_serial_data)
     );
 
+    // Debug: Monitor de señales internas clave
+    initial begin
+        $monitor("Time: %0t | out_reception_complete: %b | in_tx_data_ready: %b | out_tx_data: %b",
+                 $time, out_reception_complete, in_tx_data_ready, out_tx_data);
+    end
+
 endmodule
