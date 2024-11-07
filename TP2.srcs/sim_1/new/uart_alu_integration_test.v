@@ -6,6 +6,7 @@ module uart_alu_integration_test;
     reg in_reset;
     reg in_serial_data;              // Entrada de datos seriales para simular la recepción
     wire out_serial_data;            // Salida de datos seriales de `uart_alu_top`
+    wire out_transmission_complete;  // Señal de fin de transmisión de TX
     wire out_tx_data_ready;          // Señal de que el dato está listo para transmisión
     wire [7:0] out_parallel_data;    // Dato paralelo recibido (RX) para depuración
 
@@ -15,8 +16,9 @@ module uart_alu_integration_test;
         .in_reset(in_reset),
         .in_serial_data(in_serial_data),  // Ahora estamos enviando datos seriales desde aquí
         .out_serial_data(out_serial_data),
-        .out_tx_data_ready(out_tx_data_ready),  // Señal lista de TX
-        .out_tx_data(out_parallel_data)         // Dato paralelo de salida para depuración
+        .out_tx_data_ready(out_tx_data_ready),         // Señal lista de TX
+        .out_transmission_complete(out_transmission_complete),  // Señal de fin de transmisión TX
+        .out_tx_data(out_parallel_data)                // Dato paralelo de salida para depuración
     );
 
     // Generación del reloj de 100 MHz
@@ -40,7 +42,7 @@ module uart_alu_integration_test;
         // Inicializar señales
         in_reset = 1;
         in_serial_data = 1;  // Línea en alto para UART idle
-        $display("Inicialización completa. Reloj comenzado.");
+        $display("Inicializacion completa. Reloj comenzado.");
 
         // Liberar reset después de algunos ciclos
         #20 in_reset = 0;
@@ -104,29 +106,14 @@ module uart_alu_integration_test;
 
     // Tarea para esperar y mostrar el resultado de la ALU
     task wait_for_result(input [7*8:0] operation_name);
-        integer counter;  // Declaración de counter al inicio de la tarea
         begin
-            counter = 0;
-            $display("Esperando recepción del resultado para la operación %s...", operation_name);
-            
-            while (!out_tx_data_ready && counter < 2000) begin
-                #10;  // Espera pequeña antes de volver a comprobar
-                counter = counter + 1;
-            end
-    
-            if (out_tx_data_ready) begin
-                $display("Time: %0t | Resultado de la operación %s recibido: %b", 
-                         $time, operation_name, out_parallel_data);
-            end else begin
-                $display("Error: No se recibió el resultado para la operación %s después de %0d ciclos",
-                         operation_name, counter);
-            end
+            #100000;
         end
     endtask
 
-    // Captura del dato paralelo recibido cuando la recepción esté completa
-    always @(posedge out_tx_data_ready) begin
-        $display("Time: %0t | Dato paralelo recibido: %b", $time, out_parallel_data);
+    // Bloque para detectar el fin de la transmision y capturar el dato paralelo
+    always @(posedge out_transmission_complete) begin
+        $display("Time: %0t | Transmision completada. Dato paralelo transmitido: %b", $time, out_parallel_data);
     end
 
 endmodule

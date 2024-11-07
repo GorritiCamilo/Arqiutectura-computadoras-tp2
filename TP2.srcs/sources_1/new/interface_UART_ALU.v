@@ -19,7 +19,8 @@ module interface_UART_ALU (
     reg [3:0] operando_a;
     reg [3:0] operando_b;
     reg [5:0] operacion;
-    reg operacion_cargada;  // Indicador de que la operación y los operandos están listos para la ALU
+    reg operacion_cargada;        // Indicador de que la operación y los operandos están listos para la ALU
+    reg resultado_valido;         // Señal para indicar que el resultado es estable para transmisión
     wire [3:0] resultado_alu;
 
     // Instancia de la ALU
@@ -42,11 +43,12 @@ module interface_UART_ALU (
             operando_b <= 4'b0;
             operacion <= 6'b0;
             operacion_cargada <= 1'b0;
+            resultado_valido <= 1'b0;
             out_tx_data_ready <= 1'b0;
             out_tx_data <= 8'b0;
             $display("Time: %0t | Reset activo - Registros reiniciados", $time);
         end else begin
-            // Procesar el dato cuando este listo
+            // Procesar el dato cuando esté listo
             if (in_rx_data_ready) begin
                 $display("Time: %0t | Dato recibido: %b", $time, in_rx_data);
                 case (in_rx_data[7:6])
@@ -69,15 +71,20 @@ module interface_UART_ALU (
                 endcase
             end
 
-            // Activar el envio de datos cuando la operacion este cargada
-            if (operacion_cargada) begin
+            // Activar el envío de datos cuando la operación esté cargada
+            if (operacion_cargada && !resultado_valido) begin
                 out_tx_data <= {4'b0, resultado_alu};  // Colocar el resultado de 4 bits en los bits de menor peso
-                out_tx_data_ready <= 1'b1;             // Indicar que el dato esta listo para transmision
+                out_tx_data_ready <= 1'b1;             // Indicar que el dato está listo para transmisión
+                resultado_valido <= 1'b1;              // Marcar el resultado como válido para una transmisión
+                operacion_cargada <= 1'b0;             // Reiniciar el indicador de carga de operación
                 $display("Time: %0t | Resultado listo para transmision: %b", $time, out_tx_data);
                 $display("Time: %0t | Resultado de la ALU: %b", $time, resultado_alu);
-                operacion_cargada <= 1'b0;             // Reiniciar el indicador de carga de operacion
-            end else begin
+            end
+
+            // Desactivar `out_tx_data_ready` una vez capturado el dato
+            if (resultado_valido && !in_rx_data_ready) begin
                 out_tx_data_ready <= 1'b0;
+                resultado_valido <= 1'b0;  // Reset de la bandera solo cuando `out_tx_data_ready` esté desactivado
             end
         end
     end
