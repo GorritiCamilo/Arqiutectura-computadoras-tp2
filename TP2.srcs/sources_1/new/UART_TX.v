@@ -97,7 +97,7 @@ module UART_TX
 
     // Log para la señal de finalizacion de transmision
     always @(posedge out_transmission_complete) begin
-        $display("Time: %0t | Señal de transmision completa activa", $time);
+        $display("Time: %0t | Flag Transmision completa activada", $time);
     end
 
 endmodule

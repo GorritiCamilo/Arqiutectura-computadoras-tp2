@@ -52,6 +52,13 @@ module uart_alu_integration_test;
         // Secuencia de operaciones para la ALU (envío de datos seriales)
         send_alu_operation_serial(4'b1010, 4'b0011, SUMA, "SUMA");   // A=10, B=3, operación SUMA
         send_alu_operation_serial(4'b1100, 4'b0101, RESTA, "RESTA"); // A=12, B=5, operación RESTA
+        send_alu_operation_serial(4'b1010, 4'b0011, AND, "AND");     // A=10, B=3, operación AND
+        send_alu_operation_serial(4'b1010, 4'b0011, OR, "OR");       // A=10, B=3, operación OR
+        send_alu_operation_serial(4'b1010, 4'b0011, XOR, "XOR");     // A=10, B=3, operación XOR
+        send_alu_operation_serial(4'b1010, 4'b0011, SRA, "SRA");     // A=10, B=3, operación SRA
+        send_alu_operation_serial(4'b1010, 4'b0011, SRL, "SRL");     // A=10, B=3, operación SRL
+        send_alu_operation_serial(4'b1010, 4'b0011, NOR, "NOR");     // A=10, B=3, operación NOR
+
 
         #2000000;  // Espera extendida para que todas las operaciones terminen
         $finish;
@@ -65,7 +72,7 @@ module uart_alu_integration_test;
         input [7*8:0] operation_name  // Nombre de operación
     );
         begin
-            $display("\n--- Iniciando prueba de operación %s ---", operation_name);
+            $display("\n--- Iniciando prueba de operacion %s ---", operation_name);
 
             // Enviar operando A con identificador `00`
             send_byte_serial({4'b0000, operand_A});
