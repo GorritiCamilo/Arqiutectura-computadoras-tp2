@@ -4,93 +4,129 @@ module uart_alu_integration_test;
     // Señales de prueba
     reg in_clock_100MHz;
     reg in_reset;
-    reg in_rx_data_ready;               // Señal manual de in_rx_data_ready
-    reg [7:0] in_rx_data;               // Datos manuales de entrada para el RX
-    wire out_serial_data;               // Salida de datos seriales
-    wire out_reception_complete;        // Señal de finalización de recepción (RX)
-    wire out_tx_data_ready;             // Señal que indica que hay un dato listo para enviar en TX
-    wire [7:0] out_tx_data;             // Dato listo para ser transmitido (8 bits)
+    reg in_serial_data;              // Entrada de datos seriales para simular la recepción
+    wire out_serial_data;            // Salida de datos seriales de `uart_alu_top`
+    wire out_tx_data_ready;          // Señal de que el dato está listo para transmisión
+    wire [7:0] out_parallel_data;    // Dato paralelo recibido (RX) para depuración
 
     // Instancia del módulo `uart_alu_top`
     uart_alu_top uut (
         .in_clock_100MHz(in_clock_100MHz),
         .in_reset(in_reset),
-        .in_serial_data(out_serial_data),  // Conectar la salida de TX a la entrada de RX
-        .out_serial_data(out_serial_data)
+        .in_serial_data(in_serial_data),  // Ahora estamos enviando datos seriales desde aquí
+        .out_serial_data(out_serial_data),
+        .out_tx_data_ready(out_tx_data_ready),  // Señal lista de TX
+        .out_tx_data(out_parallel_data)         // Dato paralelo de salida para depuración
     );
 
     // Generación del reloj de 100 MHz
     initial begin
         in_clock_100MHz = 0;
-        forever #5 in_clock_100MHz = ~in_clock_100MHz;  // Reloj de 100 MHz con periodo de 10 ns
+        forever #5 in_clock_100MHz = ~in_clock_100MHz;  // Período de 10 ns
     end
 
-    // Parámetros de las operaciones ALU
+    // Parámetros de operaciones ALU
     localparam [5:0] SUMA  = 6'b100000;
+    localparam [5:0] RESTA = 6'b100010;
+    localparam [5:0] AND   = 6'b100100;
+    localparam [5:0] OR    = 6'b100101;
+    localparam [5:0] XOR   = 6'b100110;
+    localparam [5:0] SRA   = 6'b000011;
+    localparam [5:0] SRL   = 6'b000010;
+    localparam [5:0] NOR   = 6'b100111;
 
     // Secuencia de pruebas
     initial begin
-        // Inicialización de señales
+        // Inicializar señales
         in_reset = 1;
-        in_rx_data_ready = 0;
-        #20 in_reset = 0;  // Liberar reset
+        in_serial_data = 1;  // Línea en alto para UART idle
+        $display("Inicialización completa. Reloj comenzado.");
 
-        // Enviar datos de prueba (SUMA: operandos A = 10 y B = 3)
-        send_alu_operation(4'b1010, 4'b0011, SUMA, "SUMA");
+        // Liberar reset después de algunos ciclos
+        #20 in_reset = 0;
+        $display("Time: %0t | Reset liberado", $time);
+        #20;
+
+        // Secuencia de operaciones para la ALU (envío de datos seriales)
+        send_alu_operation_serial(4'b1010, 4'b0011, SUMA, "SUMA");   // A=10, B=3, operación SUMA
+        send_alu_operation_serial(4'b1100, 4'b0101, RESTA, "RESTA"); // A=12, B=5, operación RESTA
 
         #2000000;  // Espera extendida para que todas las operaciones terminen
         $finish;
     end
 
-    // Tarea para enviar los operandos y operación a la ALU a través de UART
-    task send_alu_operation(
+    // Tarea para enviar operandos y operación a la ALU serialmente
+    task send_alu_operation_serial(
         input [3:0] operand_A,
         input [3:0] operand_B,
         input [5:0] operation_code,
-        input [7*8:0] operation_name  // Cadena ASCII para nombre de operación
+        input [7*8:0] operation_name  // Nombre de operación
     );
         begin
-            $display("\n--- Testing %s operation ---", operation_name);
+            $display("\n--- Iniciando prueba de operación %s ---", operation_name);
 
-            // Enviar operando A con prefijo `0000`
-            send_byte({4'b0000, operand_A});
+            // Enviar operando A con identificador `00`
+            send_byte_serial({4'b0000, operand_A});
             
-            // Enviar operando B con prefijo `0100`
-            send_byte({4'b0100, operand_B});
+            // Enviar operando B con identificador `10`
+            send_byte_serial({4'b1000, operand_B});
             
-            // Enviar código de operación con prefijo `10`
-            send_byte({2'b10, operation_code});
+            // Enviar código de operación con identificador `01`
+            send_byte_serial({2'b01, operation_code});
 
-            // Esperar el resultado procesado por la ALU
-            wait_for_result();
+            // Esperar resultado de la ALU
+            wait_for_result(operation_name);
         end
     endtask
 
-    // Tarea para enviar un byte y activar la señal `in_rx_data_ready`
-    task send_byte(input [7:0] data);
+    // Tarea para enviar un byte serialmente a través de UART
+    task send_byte_serial(input [7:0] data);
+        integer i;
         begin
-            in_rx_data = data;
-            in_rx_data_ready = 1;
-            #10 in_rx_data_ready = 0;
-            #100;  // Espera para estabilización
-            $display("Time: %0t | Sent byte: %b", $time, data);
+            // Enviar bit de start (0)
+            in_serial_data = 0;
+            #8680;  // Asumiendo baud rate de 115200, el bit dura 8680 ns
+            $display("Time: %0t | Enviando bit de start (0)", $time);
+
+            // Enviar los 8 bits de datos, LSB primero
+            for (i = 0; i < 8; i = i + 1) begin
+                in_serial_data = data[i];
+                #8680;  // Duración de un bit a 115200 bps
+                $display("Time: %0t | Enviando bit de dato %0d: %b", $time, i, data[i]);
+            end
+
+            // Enviar bit de stop (1)
+            in_serial_data = 1;
+            #8680;
+            $display("Time: %0t | Enviando bit de stop (1)", $time);
         end
     endtask
 
-    // Tarea para esperar y mostrar el resultado procesado por la ALU
-    task wait_for_result;
+    // Tarea para esperar y mostrar el resultado de la ALU
+    task wait_for_result(input [7*8:0] operation_name);
+        integer counter;  // Declaración de counter al inicio de la tarea
         begin
-            $display("Esperando recepción del resultado de la ALU...");
-            wait(out_tx_data_ready);  // Espera hasta que la transmisión esté lista
-            #100;  // Espera para estabilización
-            $display("Time: %0t | Received ALU result: %b", $time, out_tx_data);
+            counter = 0;
+            $display("Esperando recepción del resultado para la operación %s...", operation_name);
+            
+            while (!out_tx_data_ready && counter < 2000) begin
+                #10;  // Espera pequeña antes de volver a comprobar
+                counter = counter + 1;
+            end
+    
+            if (out_tx_data_ready) begin
+                $display("Time: %0t | Resultado de la operación %s recibido: %b", 
+                         $time, operation_name, out_parallel_data);
+            end else begin
+                $display("Error: No se recibió el resultado para la operación %s después de %0d ciclos",
+                         operation_name, counter);
+            end
         end
     endtask
 
-    // Monitor para observar el dato serializado en tiempo real
-    initial begin
-        $monitor("Time: %0t | in_rx_data_ready: %b | in_rx_data: %b | out_tx_data_ready: %b | out_tx_data: %b", 
-                 $time, in_rx_data_ready, in_rx_data, out_tx_data_ready, out_tx_data);
+    // Captura del dato paralelo recibido cuando la recepción esté completa
+    always @(posedge out_tx_data_ready) begin
+        $display("Time: %0t | Dato paralelo recibido: %b", $time, out_parallel_data);
     end
 
 endmodule
