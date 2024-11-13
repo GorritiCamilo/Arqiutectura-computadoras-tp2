@@ -8,7 +8,6 @@ module UART_TX
     input wire in_reset,                   // Señal de reset del modulo
     input wire in_data_enable,             // Señal de habilitacion de datos de entrada
     input wire [7:0] in_parallel_data,     // Dato paralelo a convertir en serial
-    output wire out_transmission_complete, // Indica la finalizacion de transmision
     output reg out_serial_data             // Dato serial para transmision
 );
 
@@ -19,14 +18,14 @@ module UART_TX
     // Registros internos
     reg state;                                // Estado actual de la maquina de estados
     reg [3:0] bit_counter;                    // Contador de bits transmitidos
-    reg transmission_complete_flag;           // Indica fin de transmision
-    reg transmission_complete_delay1, transmission_complete_delay2; // Latches de señal finalizacion
+    //reg transmission_complete_flag;           // Indica fin de transmision
+    //reg transmission_complete_delay1, transmission_complete_delay2; // Latches de señal finalizacion
 
     // Maquina de estados para transmision de datos
     always @(posedge in_clock) begin
         if (in_reset) begin
             state <= STATE_IDLE;
-            transmission_complete_flag <= 1'b0;
+            //transmission_complete_flag <= 1'b0;
             out_serial_data <= 1'b1;  // Línea en alto en reposo
             bit_counter <= 0;
             $display("Time: %0t | Reset activo - Estado: STATE_IDLE", $time);
@@ -35,17 +34,17 @@ module UART_TX
             case(state)
                 STATE_IDLE: begin
                     out_serial_data <= 1'b1; // Línea en alto en reposo
-                    transmission_complete_flag <= 1'b1;
+                    //transmission_complete_flag <= 1'b1;
                     bit_counter <= 0; // Reinicia el contador de bits en estado ocioso
                     if (in_data_enable) begin
                         state <= STATE_TRANSMIT;
-                        transmission_complete_flag <= 1'b0; // Baja la bandera al iniciar transmision
+                        //transmission_complete_flag <= 1'b0; // Baja la bandera al iniciar transmision
                         $display("Time: %0t | Transicion a STATE_TRANSMIT - Dato paralelo a transmitir: %b", 
                                  $time, in_parallel_data);
                     end
                 end
                 STATE_TRANSMIT: begin
-                    transmission_complete_flag <= 1'b0; // En transmisión, la bandera se mantiene baja
+                    //transmission_complete_flag <= 1'b0; // En transmisión, la bandera se mantiene baja
                     if (in_baudrate_enable == 1) begin
                         if (bit_counter < 4'd9) begin
                             bit_counter <= bit_counter + 1;
@@ -53,7 +52,7 @@ module UART_TX
                         else begin
                             bit_counter <= 0;
                             state <= STATE_IDLE;
-                            transmission_complete_flag <= 1'b1; // Marca el final de la transmision
+                            //transmission_complete_flag <= 1'b1; // Marca el final de la transmision
                             $display("Time: %0t | Fin de transmision - Transicion a STATE_IDLE", $time);
                         end
 
@@ -81,6 +80,7 @@ module UART_TX
     end
 
     // Latches para capturar el final de la transmision
+    /***
     always @(posedge in_clock) begin
         if (in_reset) begin
             transmission_complete_delay1 <= 0;
@@ -91,13 +91,6 @@ module UART_TX
             transmission_complete_delay2 <= transmission_complete_delay1;
         end
     end
-
-    // Asignacion de la señal de finalizacion de transmision
-    assign out_transmission_complete = transmission_complete_delay1 & ~transmission_complete_delay2;
-
-    // Log para la señal de finalizacion de transmision
-    always @(posedge out_transmission_complete) begin
-        $display("Time: %0t | Flag Transmision completa activada", $time);
-    end
-
+    ***/
+    
 endmodule

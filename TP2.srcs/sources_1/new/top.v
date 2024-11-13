@@ -2,10 +2,7 @@ module uart_alu_top(
     input wire in_clock_100MHz,       // Reloj principal de 100 MHz
     input wire in_reset,              // Señal de reset
     input wire in_serial_data,        // Entrada de datos seriales para RX
-    output wire out_serial_data,      // Salida de datos seriales de TX
-    output wire out_transmission_complete, // Señal de fin de transmisión de TX
-    output wire out_tx_data_ready,    // Señal de que el dato está listo para transmisión (expuesta para pruebas)
-    output wire [7:0] out_tx_data     // Dato de salida de la ALU (expuesto para pruebas)
+    output wire out_serial_data      // Salida de datos seriales de TX
 );
 
     // Señales internas
@@ -13,6 +10,8 @@ module uart_alu_top(
     wire baud_rx_enable;              // Habilitación de recepción del generador de baud rate
     wire out_reception_complete;      // Señal de finalización de recepción (RX)
     wire [7:0] out_parallel_data;     // Dato paralelo recibido en RX (8 bits)
+    wire out_tx_data_ready;   // Señal de que el dato está listo para transmisión (expuesta para pruebas)
+    wire [7:0] out_tx_data;     // Dato de salida de la ALU (expuesto para pruebas)
 
     // Instancia del generador de reloj (clock wizard)
     wire clk_out;                     
@@ -60,7 +59,6 @@ module uart_alu_top(
         .in_reset(in_reset),
         .in_data_enable(out_tx_data_ready),         // Activar la transmisión cuando el dato de la ALU esté listo
         .in_parallel_data(out_tx_data),             // Dato a transmitir desde la ALU
-        .out_transmission_complete(out_transmission_complete),               // Señal opcional de transmisión completa
         .out_serial_data(out_serial_data)           // Salida serial para el transmisor
     );
 
